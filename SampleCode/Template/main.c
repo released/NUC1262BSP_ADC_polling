@@ -18,6 +18,8 @@ uint32_t u32AVDDVoltage = 0;
 #define VBG_VOLTAGE (1200)
 #define ADC_SAMPLE_COUNT 128 /* The last line of GetAVDDCodeByADC() need revise when ADC_SAMPLE_COUNT is changed. */
 
+uint16_t adcBuffer[8] = {0};
+
 /*_____ M A C R O S ________________________________________________________*/
 
 /*_____ F U N C T I O N S __________________________________________________*/
@@ -149,9 +151,52 @@ void dump_buffer_hex(uint8_t *pucBuff, int nBytes)
 }
 
 
+void get_ADC_ChannelMulti(void)
+{
+    uint16_t val = 0;
+    uint8_t ch = 0;
+    uint32_t mask = BIT0|BIT1|BIT2|BIT3|BIT4|BIT5|BIT6|BIT7;
+
+    /* Set the ADC operation mode as single, input mode as single-end and enable the analog input channel 3 */
+    ADC_Open(ADC, ADC_ADCR_DIFFEN_SINGLE_END, ADC_ADCR_ADMD_SINGLE_CYCLE, mask);
+
+    /* Clear the A/D interrupt flag for safe */
+    ADC_CLR_INT_FLAG(ADC, ADC_ADF_INT);
+
+    /* Start A/D conversion */
+    ADC_START_CONV(ADC);
+
+    /* Wait conversion done */
+    while(!ADC_GET_INT_FLAG(ADC, ADC_ADF_INT));
+
+    /* Clear the A/D interrupt flag for safe */
+    ADC_CLR_INT_FLAG(ADC, ADC_ADF_INT);
+
+    // __WFI();
+    // while(ADC_IS_DATA_VALID(ADC, ch) == 0);     
+
+    for ( ch = 0 ; ch < 8; ch++)
+    {
+        adcBuffer[ch] = ADC_GET_CONVERSION_DATA(ADC, ch);
+        printf("[%d]:0x%4X(%4dmV," ,ch,adcBuffer[ch],(u32AVDDVoltage*adcBuffer[ch])/4095);
+        if ((ch+1)%4 ==0)
+        {
+            printf("\r\n");
+        }         
+    }
+
+    printf("REF:%4d mv\r\n",u32AVDDVoltage);
+    // printf("0X%4X:adc voltage is %dmV if Reference voltage is %4d mv\n", val ,(u32AVDDVoltage*val)/4095 , u32AVDDVoltage);
+        
+}
+
+
 uint16_t get_ADC_Channel (uint8_t ch)
 {
     uint16_t  val = 0;
+
+    /* Set the ADC operation mode as single, input mode as single-end and enable the analog input channel 3 */
+    ADC_Open(ADC, ADC_ADCR_DIFFEN_SINGLE_END, ADC_ADCR_ADMD_SINGLE, 1 << ch );
 
     /* Clear the A/D interrupt flag for safe */
     ADC_CLR_INT_FLAG(ADC, ADC_ADF_INT);
@@ -249,10 +294,8 @@ void ADC_Init(void)
     /* Power on ADC module */
     ADC_POWER_ON(ADC);
 
-    /* Set the ADC operation mode as single, input mode as single-end and enable the analog input channel 3 */
-    ADC_Open(ADC, ADC_ADCR_DIFFEN_SINGLE_END, ADC_ADCR_ADMD_SINGLE, BIT2 );
-
-    get_ADC_Channel(2);
+    // get_ADC_Channel(2);
+    get_ADC_ChannelMulti();
 }
 
 
@@ -319,7 +362,8 @@ void loop(void)
     if (is_flag_set(flag_timer_period_100ms))
     {
         set_flag(flag_timer_period_100ms ,DISABLE);
-        get_ADC_Channel(2);       
+        // get_ADC_Channel(2);  
+    	get_ADC_ChannelMulti();             
     }
 }
 
@@ -438,11 +482,15 @@ void SYS_Init(void)
 //    SYS->GPB_MFPH = (SYS->GPB_MFPH & (~(UART0_RXD_PB12_Msk | UART0_TXD_PB13_Msk))) | (UART0_RXD_PB12 | UART0_TXD_PB13);
 
     /* Disable digital input path of ADC analog pin to prevent leakage */
-    GPIO_DISABLE_DIGITAL_PATH(PB, BIT2);
+    GPIO_DISABLE_DIGITAL_PATH(PB, BIT0|BIT1|BIT2|BIT3|BIT4|BIT5|BIT6||BIT7);
 
     /* Set multi-function pins for ADC channels */
-    SYS->GPB_MFPL &= ~(SYS_GPB_MFPL_PB2MFP_Msk );
-    SYS->GPB_MFPL |=  SYS_GPB_MFPL_PB2MFP_ADC0_CH2;
+    SYS->GPB_MFPL &= ~(SYS_GPB_MFPL_PB0MFP_Msk|SYS_GPB_MFPL_PB1MFP_Msk|SYS_GPB_MFPL_PB2MFP_Msk\
+    |SYS_GPB_MFPL_PB3MFP_Msk|SYS_GPB_MFPL_PB4MFP_Msk|SYS_GPB_MFPL_PB5MFP_Msk|\
+    SYS_GPB_MFPL_PB6MFP_Msk|SYS_GPB_MFPL_PB7MFP_Msk);
+    SYS->GPB_MFPL |=  SYS_GPB_MFPL_PB0MFP_ADC0_CH0|SYS_GPB_MFPL_PB1MFP_ADC0_CH1|SYS_GPB_MFPL_PB2MFP_ADC0_CH2\
+    |SYS_GPB_MFPL_PB3MFP_ADC0_CH3|SYS_GPB_MFPL_PB4MFP_ADC0_CH4|SYS_GPB_MFPL_PB5MFP_ADC0_CH5\
+    |SYS_GPB_MFPL_PB6MFP_ADC0_CH6|SYS_GPB_MFPL_PB7MFP_ADC0_CH7;
 
 
    /* Update System Core Clock */
